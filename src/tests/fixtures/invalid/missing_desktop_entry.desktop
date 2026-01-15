@@ -1,0 +1,5 @@
+# Missing the required [Desktop Entry] group
+[Some Other Group]
+Name=Invalid
+Exec=invalid-app
+Type=Application

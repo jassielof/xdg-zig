@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=First Entry
+Exec=first
+
+# Duplicate group - not allowed per spec
+[Desktop Entry]
+Type=Link
+URL=https://example.com

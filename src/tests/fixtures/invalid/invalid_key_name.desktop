@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Invalid Key App
+Exec=invalid-key-app
+# Keys can only contain A-Za-z0-9- characters
+Invalid Key With Spaces=bad value
+Key@Symbol=another bad key
+Key.WithDot=also invalid

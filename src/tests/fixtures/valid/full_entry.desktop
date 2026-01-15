@@ -1,0 +1,30 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Full Featured Application
+Name[es]=Aplicación Completa
+Name[fr]=Application Complète
+GenericName=Text Editor
+GenericName[es]=Editor de Texto
+Comment=A fully featured desktop entry example
+Comment[es]=Un ejemplo completo de entrada de escritorio
+Icon=text-editor
+Exec=full-app %F
+Path=/usr/share/full-app
+Terminal=false
+Categories=Utility;TextEditor;Development;
+MimeType=text/plain;text/x-markdown;
+Keywords=editor;text;write;
+StartupNotify=true
+StartupWMClass=FullApp
+Actions=new-window;preferences;
+
+[Desktop Action new-window]
+Name=New Window
+Name[es]=Nueva Ventana
+Exec=full-app --new-window
+
+[Desktop Action preferences]
+Name=Preferences
+Name[es]=Preferencias
+Exec=full-app --preferences

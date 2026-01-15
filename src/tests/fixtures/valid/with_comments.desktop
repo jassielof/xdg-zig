@@ -1,0 +1,18 @@
+# This is a comment at the beginning
+# Author: Desktop Entry Team
+# Last Updated: 2026-01-14
+
+[Desktop Entry]
+Type=Application
+Name=App with Comments
+# This comment is inside the Desktop Entry group
+Exec=app-with-comments
+Icon=application-x-executable
+# Terminal mode is disabled
+Terminal=false
+Categories=Development;
+
+# Another comment before a different group
+[X-Custom Extension]
+CustomKey=CustomValue
+VendorSpecific=true
