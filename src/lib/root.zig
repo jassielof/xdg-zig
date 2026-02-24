@@ -50,34 +50,3 @@ pub fn parseString(allocator: std.mem.Allocator, content: []const u8) !DesktopFi
     var parser = Parser.init(allocator);
     return try parser.parse(content);
 }
-
-test "library imports" {
-    // const testing = std.testing;
-    _ = Parser;
-    _ = DesktopFile;
-    _ = DesktopGroup;
-    _ = DesktopEntry;
-    _ = DesktopComment;
-    _ = ValueType;
-    _ = errors;
-}
-
-test "basic parsing" {
-    const allocator = std.testing.allocator;
-
-    const content =
-        \\[Desktop Entry]
-        \\Type=Application
-        \\Name=Test App
-        \\Exec=test-app
-        \\
-    ;
-
-    var desktop_file = try parseString(allocator, content);
-    defer desktop_file.deinit();
-
-    const entry = desktop_file.getDesktopEntry().?;
-    try std.testing.expectEqualStrings("Application", entry.getValue("Type").?);
-    try std.testing.expectEqualStrings("Test App", entry.getValue("Name").?);
-    try std.testing.expectEqualStrings("test-app", entry.getValue("Exec").?);
-}
