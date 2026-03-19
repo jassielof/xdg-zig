@@ -12,7 +12,9 @@ const Group = @This();
 /// All entries in this group, preserving insertion order
 entries: std.ArrayList(Entry),
 
-/// Index mapping keys to their position in the entries list for O(1) lookup
+/// Index mapping full keys (including [locale] suffix) to their position in
+/// the entries list for O(1) lookup.
+/// Key format: "Name" or "Name[de]"
 entry_index: std.StringHashMap(usize),
 
 /// Comments that appear in this group (preserved for spec compliance)
@@ -46,28 +48,37 @@ pub fn deinit(self: *Group, allocator: std.mem.Allocator) void {
     self.comments.deinit(allocator);
 }
 
-/// Add an entry to this group
-/// Takes ownership of the entry
+/// Add an entry to this group.
+/// Takes ownership of the entry.
+/// The index key is "key" when there is no locale, or "key[locale]" when
+/// a locale is present — so Name=... and Name[de]=... are stored separately.
 pub fn putEntry(self: *Group, allocator: std.mem.Allocator, entry: Entry) !void {
-    if (self.entry_index.get(entry.key)) |existing_index| {
+    // Build the full index key: "Name" or "Name[de]"
+    const index_key = if (entry.locale) |loc|
+        try std.fmt.allocPrint(allocator, "{s}[{s}]", .{ entry.key, loc })
+    else
+        try allocator.dupe(u8, entry.key);
+    errdefer allocator.free(index_key);
+
+    if (self.entry_index.get(index_key)) |existing_index| {
+        // Duplicate key — replace the old entry, keep the index key we already own
         self.entries.items[existing_index].deinit(allocator);
         self.entries.items[existing_index] = entry;
+        allocator.free(index_key); // we won't put this into the map
     } else {
-        const key_copy = try allocator.dupe(u8, entry.key);
-        errdefer allocator.free(key_copy);
-        const index = self.entries.items.len;
+        const idx = self.entries.items.len;
         try self.entries.append(allocator, entry);
-        try self.entry_index.put(key_copy, index);
+        try self.entry_index.put(index_key, idx);
     }
 }
 
-/// Get an entry by key name
+/// Get an entry by its base key name (no locale variant).
 pub fn getEntry(self: *const Group, key: []const u8) ?*const Entry {
     const index = self.entry_index.get(key) orelse return null;
     return &self.entries.items[index];
 }
 
-/// Get the raw value of a key
+/// Get the raw value of a key (base key, no locale).
 pub fn getValue(self: *const Group, key: []const u8) ?[]const u8 {
     const entry = self.getEntry(key) orelse return null;
     return entry.value;

@@ -28,4 +28,16 @@ pub const ParseError = error{
 
     /// The required [Desktop Entry] group is missing
     MissingDesktopEntryGroup,
+
+    /// A required key (Name or Type) is missing from [Desktop Entry]
+    MissingRequiredKey,
+
+    /// The Type value is not one of Application, Link, or Directory
+    InvalidTypeValue,
+
+    /// Type=Application requires an Exec key
+    MissingExecForApplication,
+
+    /// Type=Link requires a URL key
+    MissingUrlForLink,
 };

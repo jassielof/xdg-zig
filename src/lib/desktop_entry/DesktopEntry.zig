@@ -33,8 +33,11 @@ pub fn deinit(self: *DesktopEntry, allocator: std.mem.Allocator) void {
     }
 }
 
-/// Parse a key that may contain a locale suffix
-/// Returns the base key and optional locale
+/// Parse a key that may contain a locale suffix.
+/// Returns the base key and optional locale.
+/// Examples:
+///   "Name"       → { key: "Name", locale: null }
+///   "Name[es]"   → { key: "Name", locale: "es" }
 pub fn parseKeyWithLocale(allocator: std.mem.Allocator, full_key: []const u8) !struct { key: []const u8, locale: ?[]const u8 } {
     if (std.mem.indexOfScalar(u8, full_key, '[')) |start| {
         if (std.mem.indexOfScalar(u8, full_key, ']')) |end| {
@@ -50,7 +53,7 @@ pub fn parseKeyWithLocale(allocator: std.mem.Allocator, full_key: []const u8) !s
     return .{ .key = key, .locale = null };
 }
 
-/// Validate that a key name only contains allowed characters
+/// Validate that a key name only contains allowed characters: A-Za-z0-9-
 pub fn isValidKeyName(key: []const u8) bool {
     if (key.len == 0) return false;
 
@@ -65,7 +68,7 @@ pub fn isValidKeyName(key: []const u8) bool {
     return true;
 }
 
-/// Unescape a value string according to the desktop entry specification
+/// Unescape a value string according to the desktop entry specification.
 /// Handles: \s (space), \n (newline), \t (tab), \r (carriage return), \\ (backslash)
 pub fn unescapeValue(allocator: std.mem.Allocator, value: []const u8) ![]u8 {
     var result: std.ArrayList(u8) = .empty;
@@ -97,4 +100,70 @@ pub fn unescapeValue(allocator: std.mem.Allocator, value: []const u8) ![]u8 {
     }
 
     return result.toOwnedSlice(allocator);
+}
+
+// ── Unit tests ────────────────────────────────────────────────────────────────
+
+test "isValidKeyName: valid keys" {
+    try std.testing.expect(isValidKeyName("Name"));
+    try std.testing.expect(isValidKeyName("GenericName"));
+    try std.testing.expect(isValidKeyName("X-My-Extension"));
+    try std.testing.expect(isValidKeyName("DBusActivatable"));
+    try std.testing.expect(isValidKeyName("Key123"));
+}
+
+test "isValidKeyName: invalid keys" {
+    try std.testing.expect(!isValidKeyName(""));
+    try std.testing.expect(!isValidKeyName("Key Name"));  // space
+    try std.testing.expect(!isValidKeyName("Key.Dot"));   // dot
+    try std.testing.expect(!isValidKeyName("Key@"));      // symbol
+    try std.testing.expect(!isValidKeyName("Ключ"));      // non-ASCII
+}
+
+test "parseKeyWithLocale: plain key" {
+    const allocator = std.testing.allocator;
+    const result = try parseKeyWithLocale(allocator, "Name");
+    defer allocator.free(result.key);
+    try std.testing.expectEqualStrings("Name", result.key);
+    try std.testing.expect(result.locale == null);
+}
+
+test "parseKeyWithLocale: key with locale" {
+    const allocator = std.testing.allocator;
+    const result = try parseKeyWithLocale(allocator, "Name[es]");
+    defer allocator.free(result.key);
+    defer allocator.free(result.locale.?);
+    try std.testing.expectEqualStrings("Name", result.key);
+    try std.testing.expectEqualStrings("es", result.locale.?);
+}
+
+test "parseKeyWithLocale: key with long locale tag" {
+    const allocator = std.testing.allocator;
+    const result = try parseKeyWithLocale(allocator, "Name[zh_CN]");
+    defer allocator.free(result.key);
+    defer allocator.free(result.locale.?);
+    try std.testing.expectEqualStrings("Name", result.key);
+    try std.testing.expectEqualStrings("zh_CN", result.locale.?);
+}
+
+test "unescapeValue: no escapes" {
+    const allocator = std.testing.allocator;
+    const result = try unescapeValue(allocator, "Hello World");
+    defer allocator.free(result);
+    try std.testing.expectEqualStrings("Hello World", result);
+}
+
+test "unescapeValue: standard escape sequences" {
+    const allocator = std.testing.allocator;
+    const result = try unescapeValue(allocator, "a\\nb\\tc\\sd\\\\e");
+    defer allocator.free(result);
+    try std.testing.expectEqualStrings("a\nb\tc d\\e", result);
+}
+
+test "unescapeValue: backslash at end (unknown escape passthrough)" {
+    const allocator = std.testing.allocator;
+    const result = try unescapeValue(allocator, "foo\\x");
+    defer allocator.free(result);
+    // Unknown escape sequences are passed through unchanged
+    try std.testing.expectEqualStrings("foo\\x", result);
 }

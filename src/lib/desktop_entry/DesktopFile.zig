@@ -36,8 +36,8 @@ pub fn getDesktopEntry(self: *const DesktopFile) ?*const DesktopGroup {
     return self.groups.getPtr("Desktop Entry");
 }
 
-/// Add a new group to the file
-/// Takes ownership of the group_name string
+/// Add a new group to the file.
+/// Duplicates the group_name string internally.
 pub fn putGroup(self: *DesktopFile, group_name: []const u8, group: DesktopGroup) !void {
     const owned_name = try self.allocator.dupe(u8, group_name);
     errdefer self.allocator.free(owned_name);
@@ -47,4 +47,35 @@ pub fn putGroup(self: *DesktopFile, group_name: []const u8, group: DesktopGroup)
 /// Get a group by name
 pub fn getGroup(self: *const DesktopFile, name: []const u8) ?*const DesktopGroup {
     return self.groups.getPtr(name);
+}
+
+/// Return true if a group with the given name exists
+pub fn hasGroup(self: *const DesktopFile, name: []const u8) bool {
+    return self.groups.contains(name);
+}
+
+// ── Convenience accessors for [Desktop Entry] keys ───────────────────────────
+
+/// Return the raw value of the `Type` key, or null if absent
+pub fn getType(self: *const DesktopFile) ?[]const u8 {
+    const de = self.getDesktopEntry() orelse return null;
+    return de.getValue("Type");
+}
+
+/// Return the raw value of the `Name` key, or null if absent
+pub fn getName(self: *const DesktopFile) ?[]const u8 {
+    const de = self.getDesktopEntry() orelse return null;
+    return de.getValue("Name");
+}
+
+/// Return the raw value of the `Exec` key, or null if absent
+pub fn getExec(self: *const DesktopFile) ?[]const u8 {
+    const de = self.getDesktopEntry() orelse return null;
+    return de.getValue("Exec");
+}
+
+/// Return the raw value of the `URL` key, or null if absent
+pub fn getURL(self: *const DesktopFile) ?[]const u8 {
+    const de = self.getDesktopEntry() orelse return null;
+    return de.getValue("URL");
 }
