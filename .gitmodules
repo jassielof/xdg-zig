@@ -1,3 +1,9 @@
 [submodule "tests/fixtures"]
 	path = tests/fixtures
 	url = https://github.com/jassielof/xdg-desktop-entry-fixtures
+[submodule "references/xdg-specs"]
+	path = references/xdg-specs
+	url = https://gitlab.freedesktop.org/xdg/xdg-specs.git
+[submodule "references/pyxdg"]
+	path = references/pyxdg
+	url = https://gitlab.freedesktop.org/xdg/pyxdg.git
