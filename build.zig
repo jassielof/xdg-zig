@@ -1,8 +1,8 @@
 const std = @import("std");
 
-// expand the library to not only desktop entry but also other related xdg standards, use the pyxdg library as reference.
 pub fn build(b: *std.Build) void {
-    const mod_name = "xdg_desktop_entry";
+    const mod_name = "xdg";
+
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
@@ -15,32 +15,45 @@ pub fn build(b: *std.Build) void {
         },
     );
 
-    const lib = b.addLibrary(.{
+    const docs_step = b.step("docs", "Generate the documentation");
+
+    const docs_lib = b.addLibrary(.{
         .name = mod_name,
         .root_module = lib_mod,
     });
 
     const docs = b.addInstallDirectory(.{
-        .source_dir = lib.getEmittedDocs(),
+        .source_dir = docs_lib.getEmittedDocs(),
         .install_dir = .prefix,
         .install_subdir = "docs",
     });
 
-    const docs_step = b.step("docs", "Generate the documentation");
     docs_step.dependOn(&docs.step);
 
-    const tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/suite.zig"),
-            .optimize = optimize,
-            .target = target,
-            .imports = &.{
-                .{ .name = mod_name, .module = lib_mod },
-            },
-        }),
+    const tests_step = b.step("tests", "Run the test suite");
+
+    const test_suite = b.createModule(.{
+        .root_source_file = b.path("tests/suite.zig"),
+        .optimize = optimize,
+        .target = target,
+        .imports = &.{
+            .{ .name = mod_name, .module = lib_mod },
+        },
     });
 
-    const run_tests = b.addRunArtifact(tests);
-    const tests_step = b.step("tests", "Run the test suite");
-    tests_step.dependOn(&run_tests.step);
+    const integration_tests = b.addTest(.{
+        .name = "integration tests",
+        .root_module = test_suite,
+    });
+
+    const run_integration_tests = b.addRunArtifact(integration_tests);
+    tests_step.dependOn(&run_integration_tests.step);
+
+    const unit_tests = b.addTest(.{
+        .name = "unit tests",
+        .root_module = lib_mod,
+    });
+
+    const run_unit_tests = b.addRunArtifact(unit_tests);
+    tests_step.dependOn(&run_unit_tests.step);
 }
