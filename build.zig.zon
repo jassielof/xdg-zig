@@ -1,7 +1,7 @@
 .{
-    .name = .xdg_desktop_entry,
+    .name = .xdg,
     .version = "0.1.0+spec-1.5",
-    .fingerprint = 0x66d0c4cd028f49c4,
+    .fingerprint = 0x77e4baa28d6f05f7,
     .minimum_zig_version = "0.15.2",
     .paths = .{
         "build.zig",
