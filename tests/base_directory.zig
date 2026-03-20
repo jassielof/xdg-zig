@@ -2,6 +2,7 @@
 //! These tests exercise the real process environment (env = null).
 
 const std = @import("std");
+const builtin = @import("builtin");
 const xdg = @import("xdg");
 const bd = xdg.base_directory;
 
@@ -48,12 +49,12 @@ test "real env: xdgExecutableHome is absolute and ends with .local/bin" {
     );
 }
 
-test "real env: xdgRuntimeDir is null or non-empty string" {
+test "real env: xdgRuntimeDir is null or absolute" {
     const allocator = std.testing.allocator;
     const rt = try bd.xdgRuntimeDir(allocator);
     if (rt) |val| {
         defer allocator.free(val);
-        try std.testing.expect(val.len > 0);
+        try std.testing.expect(std.fs.path.isAbsolute(val));
     }
     // null is perfectly valid — no assertion needed
 }
@@ -139,18 +140,31 @@ test "override: XDG_DATA_DIRS relative entries are filtered" {
     const allocator = std.testing.allocator;
     var env = try makeTestEnv(allocator);
     defer env.deinit();
-    try env.put("XDG_DATA_DIRS", "/abs1:not_absolute:/abs2");
+
+    const path1 = if (builtin.os.tag == .windows) "C:\\abs1" else "/abs1";
+    const path2 = if (builtin.os.tag == .windows) "D:\\abs2" else "/abs2";
+    const dirs_var = try std.fmt.allocPrint(
+        allocator,
+        "{s}{c}not_absolute{c}{s}",
+        .{ path1, std.fs.path.delimiter, std.fs.path.delimiter, path2 },
+    );
+    defer allocator.free(dirs_var);
+
+    try env.put("XDG_DATA_DIRS", dirs_var);
     const dirs = try bd.xdgDataDirs(allocator, &env);
     defer bd.freeDirs(allocator, dirs);
     // home + /abs1 + /abs2 (not_absolute filtered)
     try std.testing.expectEqual(@as(usize, 3), dirs.len);
-    try std.testing.expectEqualStrings("/abs1", dirs[1]);
-    try std.testing.expectEqualStrings("/abs2", dirs[2]);
+    try std.testing.expectEqualStrings(path1, dirs[1]);
+    try std.testing.expectEqualStrings(path2, dirs[2]);
 }
 
-test "override: xdgRuntimeDir reads real env only" {
-    // xdgRuntimeDir has no env injection; just assert it doesn't panic.
+test "override: xdgRuntimeDir remains safe under synthetic-env tests" {
+    // xdgRuntimeDir intentionally reads process env; assert API is stable.
     const allocator = std.testing.allocator;
     const rt = try bd.xdgRuntimeDir(allocator);
-    if (rt) |val| allocator.free(val);
+    if (rt) |val| {
+        defer allocator.free(val);
+        try std.testing.expect(std.fs.path.isAbsolute(val));
+    }
 }

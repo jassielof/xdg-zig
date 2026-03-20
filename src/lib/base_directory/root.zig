@@ -3,10 +3,10 @@
 //! Implements version 0.8 of the spec:
 //! https://specifications.freedesktop.org/basedir-spec/latest/
 //!
-//! All public functions accept an optional `?*const std.process.EnvMap`.
+//! Most public functions accept an optional `?*const std.process.EnvMap`.
 //! When non-null the map is used instead of the real process environment,
 //! which allows deterministic unit testing without mutating global state.
-//! Pass `null` in production code to use the real environment.
+//! `xdgRuntimeDir` uses the real environment via its public API.
 //!
 //! Functions returning a single path return a `[]u8` owned by the caller.
 //! Directory list functions return a `[][]u8`; use `freeDirs` to release them.
@@ -15,6 +15,7 @@
 //! ignored when building directory lists.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 const EnvMap = std.process.EnvMap;
 const fsp = std.fs.path;
@@ -53,14 +54,14 @@ fn getHomeDir(allocator: Allocator, env: ?*const EnvMap) ![]u8 {
     return error.EnvironmentVariableNotFound;
 }
 
-/// Split a colon-separated list and append only absolute entries to `out`.
+/// Split a platform-path-separated list and append only absolute entries.
 /// Uses the unmanaged ArrayList API (Zig 0.15): pass allocator to `append`.
 fn collectAbsolutePaths(
     allocator: Allocator,
     list_str: []const u8,
     out: *std.ArrayList([]u8),
 ) !void {
-    var iter = std.mem.splitScalar(u8, list_str, ':');
+    var iter = std.mem.splitScalar(u8, list_str, fsp.delimiter);
     while (iter.next()) |entry| {
         const trimmed = std.mem.trim(u8, entry, " \t");
         if (trimmed.len == 0 or !fsp.isAbsolute(trimmed)) continue;
@@ -115,14 +116,26 @@ pub fn xdgExecutableHome(allocator: Allocator, env: ?*const EnvMap) ![]u8 {
     return std.mem.join(allocator, "/", &.{ home, ".local", "bin" });
 }
 
-/// `$XDG_RUNTIME_DIR` or null if unset.
-/// Uses `getEnvVarOwned` for cross-platform compatibility (no posix.getenv).
+/// Internal helper to support deterministic tests with synthetic env maps.
+fn xdgRuntimeDirWithEnv(allocator: Allocator, env: ?*const EnvMap) !?[]u8 {
+    if (try getAbsEnvVar(allocator, env, "XDG_RUNTIME_DIR")) |v| return v;
+
+    if (builtin.os.tag == .linux) {
+        std.log.warn(
+            "XDG_RUNTIME_DIR is unset or invalid; using Linux fallback /run/user/$UID",
+            .{},
+        );
+        return std.fmt.allocPrint(allocator, "/run/user/{d}", .{std.posix.getuid()});
+    }
+
+    return null;
+}
+
+/// `$XDG_RUNTIME_DIR` when set to an absolute path; otherwise null on
+/// non-Linux, or `/run/user/$UID` on Linux as a replacement directory.
 /// Caller must free the returned slice when non-null.
 pub fn xdgRuntimeDir(allocator: Allocator) !?[]u8 {
-    return std.process.getEnvVarOwned(allocator, "XDG_RUNTIME_DIR") catch |err| switch (err) {
-        error.EnvironmentVariableNotFound => null,
-        else => return err,
-    };
+    return xdgRuntimeDirWithEnv(allocator, null);
 }
 
 // ── Directory list accessors ──────────────────────────────────────────────────
@@ -317,25 +330,45 @@ test "xdgDataDirs: custom XDG_DATA_DIRS" {
     const allocator = std.testing.allocator;
     var env = try makeEnv(allocator);
     defer env.deinit();
-    try env.put("XDG_DATA_DIRS", "/opt/data:/srv/data");
+
+    const path1 = if (builtin.os.tag == .windows) "C:\\opt\\data" else "/opt/data";
+    const path2 = if (builtin.os.tag == .windows) "D:\\srv\\data" else "/srv/data";
+    const dirs_var = try std.fmt.allocPrint(
+        allocator,
+        "{s}{c}{s}",
+        .{ path1, fsp.delimiter, path2 },
+    );
+    defer allocator.free(dirs_var);
+
+    try env.put("XDG_DATA_DIRS", dirs_var);
     const dirs = try xdgDataDirs(allocator, &env);
     defer freeDirs(allocator, dirs);
     try std.testing.expectEqual(@as(usize, 3), dirs.len);
-    try std.testing.expectEqualStrings("/opt/data", dirs[1]);
-    try std.testing.expectEqualStrings("/srv/data", dirs[2]);
+    try std.testing.expectEqualStrings(path1, dirs[1]);
+    try std.testing.expectEqualStrings(path2, dirs[2]);
 }
 
 test "xdgDataDirs: relative paths in XDG_DATA_DIRS are filtered out" {
     const allocator = std.testing.allocator;
     var env = try makeEnv(allocator);
     defer env.deinit();
-    try env.put("XDG_DATA_DIRS", "/valid:relative_bad:/also_valid");
+
+    const path1 = if (builtin.os.tag == .windows) "C:\\valid" else "/valid";
+    const path2 = if (builtin.os.tag == .windows) "D:\\also_valid" else "/also_valid";
+    const dirs_var = try std.fmt.allocPrint(
+        allocator,
+        "{s}{c}relative_bad{c}{s}",
+        .{ path1, fsp.delimiter, fsp.delimiter, path2 },
+    );
+    defer allocator.free(dirs_var);
+
+    try env.put("XDG_DATA_DIRS", dirs_var);
     const dirs = try xdgDataDirs(allocator, &env);
     defer freeDirs(allocator, dirs);
     // home + /valid + /also_valid (relative_bad filtered)
     try std.testing.expectEqual(@as(usize, 3), dirs.len);
-    try std.testing.expectEqualStrings("/valid", dirs[1]);
-    try std.testing.expectEqualStrings("/also_valid", dirs[2]);
+    try std.testing.expectEqualStrings(path1, dirs[1]);
+    try std.testing.expectEqualStrings(path2, dirs[2]);
 }
 
 test "xdgConfigDirs: default is /etc/xdg when XDG_CONFIG_DIRS unset" {
@@ -347,4 +380,80 @@ test "xdgConfigDirs: default is /etc/xdg when XDG_CONFIG_DIRS unset" {
     try std.testing.expectEqual(@as(usize, 2), dirs.len);
     try std.testing.expectEqualStrings("/home/testuser/.config", dirs[0]);
     try std.testing.expectEqualStrings("/etc/xdg", dirs[1]);
+}
+
+test "xdgConfigDirs: custom XDG_CONFIG_DIRS uses platform separator" {
+    const allocator = std.testing.allocator;
+    var env = try makeEnv(allocator);
+    defer env.deinit();
+
+    const path1 = if (builtin.os.tag == .windows) "C:\\etc\\xdg" else "/etc/xdg";
+    const path2 = if (builtin.os.tag == .windows) "D:\\etc\\xdg-extra" else "/etc/xdg-extra";
+    const dirs_var = try std.fmt.allocPrint(
+        allocator,
+        "{s}{c}{s}",
+        .{ path1, fsp.delimiter, path2 },
+    );
+    defer allocator.free(dirs_var);
+
+    try env.put("XDG_CONFIG_DIRS", dirs_var);
+
+    const dirs = try xdgConfigDirs(allocator, &env);
+    defer freeDirs(allocator, dirs);
+    try std.testing.expectEqual(@as(usize, 3), dirs.len);
+    try std.testing.expectEqualStrings("/home/testuser/.config", dirs[0]);
+    try std.testing.expectEqualStrings(path1, dirs[1]);
+    try std.testing.expectEqualStrings(path2, dirs[2]);
+}
+
+test "xdgRuntimeDir: absolute env value is honoured" {
+    const allocator = std.testing.allocator;
+    var env = try makeEnv(allocator);
+    defer env.deinit();
+
+    const runtime_dir = if (builtin.os.tag == .windows)
+        "C:\\runtime\\xdg"
+    else
+        "/tmp/runtime-xdg";
+    try env.put("XDG_RUNTIME_DIR", runtime_dir);
+
+    const got = try xdgRuntimeDirWithEnv(allocator, &env);
+    defer if (got) |g| allocator.free(g);
+    try std.testing.expect(got != null);
+    try std.testing.expectEqualStrings(runtime_dir, got.?);
+}
+
+test "xdgRuntimeDir: relative env value is ignored" {
+    const allocator = std.testing.allocator;
+    var env = try makeEnv(allocator);
+    defer env.deinit();
+    try env.put("XDG_RUNTIME_DIR", "relative/runtime");
+
+    const got = try xdgRuntimeDirWithEnv(allocator, &env);
+    defer if (got) |g| allocator.free(g);
+
+    if (builtin.os.tag == .linux) {
+        const expected = try std.fmt.allocPrint(allocator, "/run/user/{d}", .{std.posix.getuid()});
+        defer allocator.free(expected);
+        try std.testing.expect(got != null);
+        try std.testing.expectEqualStrings(expected, got.?);
+    } else {
+        try std.testing.expect(got == null);
+    }
+}
+
+test "xdgRuntimeDir: Linux fallback when unset" {
+    if (builtin.os.tag != .linux) return;
+
+    const allocator = std.testing.allocator;
+    var env = try makeEnv(allocator);
+    defer env.deinit();
+
+    const got = try xdgRuntimeDirWithEnv(allocator, &env);
+    defer if (got) |g| allocator.free(g);
+    const expected = try std.fmt.allocPrint(allocator, "/run/user/{d}", .{std.posix.getuid()});
+    defer allocator.free(expected);
+
+    try std.testing.expect(got != null);
+    try std.testing.expectEqualStrings(expected, got.?);
 }
