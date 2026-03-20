@@ -5,9 +5,38 @@ const std = @import("std");
 const xdg = @import("xdg");
 const de = xdg.desktop_entry;
 
-// Helper: parse a fixture file relative to the build root.
+fn resolveFixturePath(allocator: std.mem.Allocator, rel_path: []const u8) ![]u8 {
+    var current_dir = try std.fs.cwd().realpathAlloc(allocator, ".");
+    defer allocator.free(current_dir);
+
+    while (true) {
+        const candidate = try std.fs.path.join(allocator, &.{ current_dir, rel_path });
+        if (std.fs.cwd().access(candidate, .{})) {
+            return candidate;
+        } else |err| switch (err) {
+            error.FileNotFound => allocator.free(candidate),
+            else => {
+                allocator.free(candidate);
+                return err;
+            },
+        }
+
+        const parent = std.fs.path.dirname(current_dir) orelse break;
+        if (parent.len == current_dir.len) break;
+
+        const next_dir = try allocator.dupe(u8, parent);
+        allocator.free(current_dir);
+        current_dir = next_dir;
+    }
+
+    return error.FileNotFound;
+}
+
+// Helper: parse a fixture file relative to project root, independent of cwd.
 fn parseFixture(allocator: std.mem.Allocator, rel_path: []const u8) !de.DesktopFile {
-    return de.parseFile(allocator, rel_path);
+    const path = try resolveFixturePath(allocator, rel_path);
+    defer allocator.free(path);
+    return de.parseFile(allocator, path);
 }
 
 // ── Valid fixtures ─────────────────────────────────────────────────────────────
