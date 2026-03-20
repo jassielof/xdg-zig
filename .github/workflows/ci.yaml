@@ -20,7 +20,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Setup Zig
-        uses: jassielof/setup-zig@main
+        uses: jassielof/setup-zig@v1
 
       - name: Formatting
         run: zig fmt .
@@ -52,7 +52,7 @@ jobs:
           submodules: true
 
       - name: Setup Zig
-        uses: jassielof/setup-zig@main
+        uses: jassielof/setup-zig@v1
 
       - name: Tests
         run: zig build tests --summary all
