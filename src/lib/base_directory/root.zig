@@ -125,7 +125,8 @@ fn xdgRuntimeDirWithEnv(allocator: Allocator, env: ?*const EnvMap) !?[]u8 {
             "XDG_RUNTIME_DIR is unset or invalid; using Linux fallback /run/user/$UID",
             .{},
         );
-        return std.fmt.allocPrint(allocator, "/run/user/{d}", .{std.posix.getuid()});
+        const fallback = try std.fmt.allocPrint(allocator, "/run/user/{d}", .{std.posix.getuid()});
+        return fallback;
     }
 
     return null;
