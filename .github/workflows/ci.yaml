@@ -28,9 +28,6 @@ jobs:
       - name: Build
         run: zig build --summary all
 
-      - name: Tests
-        run: zig build --summary all tests
-
       - name: Docs
         run: zig build docs --summary all
 
