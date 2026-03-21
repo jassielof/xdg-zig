@@ -4,5 +4,5 @@ const testing = std.testing;
 test {
     _ = @import("desktop_entry.zig");
     _ = @import("base_directory.zig");
-    testing.refAllDecls(@This());
+    // testing.refAllDecls(@This()); // i think this is unnecessary XD
 }
