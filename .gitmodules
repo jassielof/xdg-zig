@@ -1,5 +1,5 @@
 [submodule "references/xdg-specs"]
-	path = references/xdg-specs
+	path = references/specs
 	url = https://gitlab.freedesktop.org/xdg/xdg-specs.git
 [submodule "references/pyxdg"]
 	path = references/pyxdg
