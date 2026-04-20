@@ -6,7 +6,7 @@ XDG libraries for Zig
 
 XDG Desktop Entry file format library for Zig.
 
-## Specification reference
+### References for XDG Desktop Entry
 
 Revised against version 1.5 published on 2020-04-27.
 
