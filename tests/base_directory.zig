@@ -6,10 +6,6 @@ const builtin = @import("builtin");
 const xdg = @import("xdg");
 const bd = xdg.base_directory;
 
-// ── Real-environment tests ────────────────────────────────────────────────────
-// These test the actual running environment. We can't assume specific paths,
-// but we can assert structural properties (absolute, correct suffix, etc.).
-
 test "real env: xdgDataHome is absolute" {
     const allocator = std.testing.allocator;
     const h = try bd.xdgDataHome(allocator, null);
