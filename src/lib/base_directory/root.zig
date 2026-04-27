@@ -13,16 +13,23 @@ const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 const EnvironMap = std.process.Environ.Map;
 const fsp = std.fs.path;
+const Io = std.Io;
 
 /// Look up a key in an environment map (which must be provided by the caller).
 ///
 /// Returns an allocated copy owned by the caller, or null if absent/empty.
 fn envGet(
     allocator: Allocator,
-    env_map: *const EnvironMap,
+    env_map: ?*const EnvironMap,
     key: []const u8,
 ) !?[]u8 {
-    const val = env_map.get(key) orelse return null;
+    const val = if (env_map) |map|
+        map.get(key) orelse return null
+    else
+        return std.process.Environ.getAlloc(processEnviron(), allocator, key) catch |err| switch (err) {
+            error.EnvironmentVariableMissing => return null,
+            else => return err,
+        };
     return try allocator.dupe(u8, val);
 }
 
@@ -31,23 +38,25 @@ fn envGet(
 /// Returns null when absent, empty, or relative. Caller owns the result.
 fn getAbsEnvVar(
     allocator: Allocator,
-    env_map: *const EnvironMap,
+    env_map: ?*const EnvironMap,
     key: []const u8,
 ) !?[]u8 {
-    const val = env_map.get(key) orelse return null;
+    const val = try envGet(allocator, env_map, key) orelse return null;
+    errdefer allocator.free(val);
 
     if (val.len == 0 or !fsp.isAbsolute(val)) {
+        allocator.free(val);
         return null;
     }
 
-    return try allocator.dupe(u8, val);
+    return val;
 }
 
 /// Return the user home directory. Checks HOME then USERPROFILE. Caller owns.
-fn getHomeDir(allocator: Allocator, env: ?*const EnvMap) ![]u8 {
+fn getHomeDir(allocator: Allocator, env: ?*const EnvironMap) ![]u8 {
     if (try envGet(allocator, env, "HOME")) |h| return h;
     if (try envGet(allocator, env, "USERPROFILE")) |h| return h;
-    return error.EnvironmentVariableNotFound;
+    return error.EnvironmentVariableMissing;
 }
 
 /// Split a platform-path-separated list and append only absolute entries.
@@ -73,7 +82,7 @@ fn freeDirsList(allocator: Allocator, list: *std.ArrayList([]u8)) void {
 }
 
 /// `$XDG_DATA_HOME` or `$HOME/.local/share`. Caller must free.
-pub fn xdgDataHome(allocator: Allocator, env: ?*const EnvMap) ![]u8 {
+pub fn xdgDataHome(allocator: Allocator, env: ?*const EnvironMap) ![]u8 {
     if (try getAbsEnvVar(allocator, env, "XDG_DATA_HOME")) |v| return v;
     const home = try getHomeDir(allocator, env);
     defer allocator.free(home);
@@ -81,7 +90,7 @@ pub fn xdgDataHome(allocator: Allocator, env: ?*const EnvMap) ![]u8 {
 }
 
 /// `$XDG_CONFIG_HOME` or `$HOME/.config`. Caller must free.
-pub fn xdgConfigHome(allocator: Allocator, env: ?*const EnvMap) ![]u8 {
+pub fn xdgConfigHome(allocator: Allocator, env: ?*const EnvironMap) ![]u8 {
     if (try getAbsEnvVar(allocator, env, "XDG_CONFIG_HOME")) |v| return v;
     const home = try getHomeDir(allocator, env);
     defer allocator.free(home);
@@ -89,7 +98,7 @@ pub fn xdgConfigHome(allocator: Allocator, env: ?*const EnvMap) ![]u8 {
 }
 
 /// `$XDG_STATE_HOME` or `$HOME/.local/state`. Caller must free.
-pub fn xdgStateHome(allocator: Allocator, env: ?*const EnvMap) ![]u8 {
+pub fn xdgStateHome(allocator: Allocator, env: ?*const EnvironMap) ![]u8 {
     if (try getAbsEnvVar(allocator, env, "XDG_STATE_HOME")) |v| return v;
     const home = try getHomeDir(allocator, env);
     defer allocator.free(home);
@@ -97,7 +106,7 @@ pub fn xdgStateHome(allocator: Allocator, env: ?*const EnvMap) ![]u8 {
 }
 
 /// `$XDG_CACHE_HOME` or `$HOME/.cache`. Caller must free.
-pub fn xdgCacheHome(allocator: Allocator, env: ?*const EnvMap) ![]u8 {
+pub fn xdgCacheHome(allocator: Allocator, env: ?*const EnvironMap) ![]u8 {
     if (try getAbsEnvVar(allocator, env, "XDG_CACHE_HOME")) |v| return v;
     const home = try getHomeDir(allocator, env);
     defer allocator.free(home);
@@ -105,14 +114,14 @@ pub fn xdgCacheHome(allocator: Allocator, env: ?*const EnvMap) ![]u8 {
 }
 
 /// `$HOME/.local/bin` (no env var override per spec). Caller must free.
-pub fn xdgExecutableHome(allocator: Allocator, env: ?*const EnvMap) ![]u8 {
+pub fn xdgExecutableHome(allocator: Allocator, env: ?*const EnvironMap) ![]u8 {
     const home = try getHomeDir(allocator, env);
     defer allocator.free(home);
     return std.mem.join(allocator, "/", &.{ home, ".local", "bin" });
 }
 
 /// Internal helper to support deterministic tests with synthetic env maps.
-fn xdgRuntimeDirWithEnv(allocator: Allocator, env: ?*const EnvMap) !?[]u8 {
+fn xdgRuntimeDirWithEnv(allocator: Allocator, env: ?*const EnvironMap) !?[]u8 {
     if (try getAbsEnvVar(allocator, env, "XDG_RUNTIME_DIR")) |v| return v;
 
     if (builtin.os.tag == .linux) {
@@ -137,7 +146,7 @@ pub fn xdgRuntimeDir(allocator: Allocator) !?[]u8 {
 /// `[xdgDataHome] ++ $XDG_DATA_DIRS` (default: /usr/local/share, /usr/share).
 ///
 /// Relative paths in the env var are silently skipped. Caller must `freeDirs`.
-pub fn xdgDataDirs(allocator: Allocator, env: ?*const EnvMap) ![][]u8 {
+pub fn xdgDataDirs(allocator: Allocator, env: ?*const EnvironMap) ![][]u8 {
     var list: std.ArrayList([]u8) = .empty;
     errdefer freeDirsList(allocator, &list);
 
@@ -164,7 +173,7 @@ pub fn xdgDataDirs(allocator: Allocator, env: ?*const EnvMap) ![][]u8 {
 /// `[xdgConfigHome] ++ $XDG_CONFIG_DIRS` (default: /etc/xdg).
 ///
 /// Relative paths in the env var are silently skipped. Caller must `freeDirs`.
-pub fn xdgConfigDirs(allocator: Allocator, env: ?*const EnvMap) ![][]u8 {
+pub fn xdgConfigDirs(allocator: Allocator, env: ?*const EnvironMap) ![][]u8 {
     var list: std.ArrayList([]u8) = .empty;
     errdefer freeDirsList(allocator, &list);
 
@@ -189,12 +198,12 @@ pub fn xdgConfigDirs(allocator: Allocator, env: ?*const EnvMap) ![][]u8 {
 /// Search data dirs for a relative `resource` path; return first existing match.
 ///
 /// Caller must free the returned path (when non-null).
-pub fn findDataFile(allocator: Allocator, env: ?*const EnvMap, resource: []const u8) !?[]u8 {
+pub fn findDataFile(allocator: Allocator, env: ?*const EnvironMap, resource: []const u8) !?[]u8 {
     const dirs = try xdgDataDirs(allocator, env);
     defer freeDirs(allocator, dirs);
     for (dirs) |dir| {
         const candidate = try std.mem.join(allocator, "/", &.{ dir, resource });
-        if (std.fs.accessAbsolute(candidate, .{})) |_| {
+        if (Io.Dir.accessAbsolute(defaultIo(), candidate, .{})) |_| {
             return candidate;
         } else |_| {
             allocator.free(candidate);
@@ -206,12 +215,12 @@ pub fn findDataFile(allocator: Allocator, env: ?*const EnvMap, resource: []const
 /// Search config dirs for a relative `resource` path; return first existing match.
 ///
 /// Caller must free the returned path (when non-null).
-pub fn findConfigFile(allocator: Allocator, env: ?*const EnvMap, resource: []const u8) !?[]u8 {
+pub fn findConfigFile(allocator: Allocator, env: ?*const EnvironMap, resource: []const u8) !?[]u8 {
     const dirs = try xdgConfigDirs(allocator, env);
     defer freeDirs(allocator, dirs);
     for (dirs) |dir| {
         const candidate = try std.mem.join(allocator, "/", &.{ dir, resource });
-        if (std.fs.accessAbsolute(candidate, .{})) |_| {
+        if (Io.Dir.accessAbsolute(defaultIo(), candidate, .{})) |_| {
             return candidate;
         } else |_| {
             allocator.free(candidate);
@@ -226,10 +235,18 @@ pub fn freeDirs(allocator: Allocator, dirs: [][]u8) void {
     allocator.free(dirs);
 }
 
-fn makeEnv(allocator: Allocator) !EnvMap {
-    var env = EnvMap.init(allocator);
+fn makeEnv(allocator: Allocator) !EnvironMap {
+    var env = EnvironMap.init(allocator);
     try env.put("HOME", "/home/testuser");
     return env;
+}
+
+fn processEnviron() std.process.Environ {
+    return .{ .block = if (builtin.os.tag == .windows) .global else .empty };
+}
+
+fn defaultIo() Io {
+    return Io.Threaded.global_single_threaded.io();
 }
 
 test "xdgDataHome: default from HOME" {
