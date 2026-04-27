@@ -129,7 +129,7 @@ fn xdgRuntimeDirWithEnv(allocator: Allocator, env: ?*const EnvironMap) !?[]u8 {
             "XDG_RUNTIME_DIR is unset or invalid; using Linux fallback /run/user/$UID",
             .{},
         );
-        const fallback = try std.fmt.allocPrint(allocator, "/run/user/{d}", .{std.posix.getuid()});
+        const fallback = try std.fmt.allocPrint(allocator, "/run/user/{d}", .{std.os.linux.getuid()});
         return fallback;
     }
 
@@ -438,7 +438,7 @@ test "xdgRuntimeDir: relative env value is ignored" {
     defer if (got) |g| allocator.free(g);
 
     if (builtin.os.tag == .linux) {
-        const expected = try std.fmt.allocPrint(allocator, "/run/user/{d}", .{std.posix.getuid()});
+        const expected = try std.fmt.allocPrint(allocator, "/run/user/{d}", .{std.os.linux.getuid()});
         defer allocator.free(expected);
         try std.testing.expect(got != null);
         try std.testing.expectEqualStrings(expected, got.?);
@@ -456,7 +456,7 @@ test "xdgRuntimeDir: Linux fallback when unset" {
 
     const got = try xdgRuntimeDirWithEnv(allocator, &env);
     defer if (got) |g| allocator.free(g);
-    const expected = try std.fmt.allocPrint(allocator, "/run/user/{d}", .{std.posix.getuid()});
+    const expected = try std.fmt.allocPrint(allocator, "/run/user/{d}", .{std.os.linux.getuid()});
     defer allocator.free(expected);
 
     try std.testing.expect(got != null);
