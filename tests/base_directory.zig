@@ -1,5 +1,5 @@
 //! Integration tests for the XDG Base Directory module.
-//! These tests exercise the real process environment (env = null).
+//! These tests use synthetic environment maps for deterministic CI behavior.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -7,37 +7,47 @@ const builtin = @import("builtin");
 const xdg = @import("xdg");
 const bd = xdg.base_directory;
 
-test "real env: xdgDataHome is absolute" {
+test "env map: xdgDataHome is absolute" {
     const allocator = std.testing.allocator;
-    const h = try bd.xdgDataHome(allocator, null);
+    var env = try makeTestEnv(allocator);
+    defer env.deinit();
+    const h = try bd.xdgDataHome(allocator, &env);
     defer allocator.free(h);
     try std.testing.expect(std.fs.path.isAbsolute(h));
 }
 
-test "real env: xdgConfigHome is absolute" {
+test "env map: xdgConfigHome is absolute" {
     const allocator = std.testing.allocator;
-    const h = try bd.xdgConfigHome(allocator, null);
+    var env = try makeTestEnv(allocator);
+    defer env.deinit();
+    const h = try bd.xdgConfigHome(allocator, &env);
     defer allocator.free(h);
     try std.testing.expect(std.fs.path.isAbsolute(h));
 }
 
-test "real env: xdgStateHome is absolute" {
+test "env map: xdgStateHome is absolute" {
     const allocator = std.testing.allocator;
-    const h = try bd.xdgStateHome(allocator, null);
+    var env = try makeTestEnv(allocator);
+    defer env.deinit();
+    const h = try bd.xdgStateHome(allocator, &env);
     defer allocator.free(h);
     try std.testing.expect(std.fs.path.isAbsolute(h));
 }
 
-test "real env: xdgCacheHome is absolute" {
+test "env map: xdgCacheHome is absolute" {
     const allocator = std.testing.allocator;
-    const h = try bd.xdgCacheHome(allocator, null);
+    var env = try makeTestEnv(allocator);
+    defer env.deinit();
+    const h = try bd.xdgCacheHome(allocator, &env);
     defer allocator.free(h);
     try std.testing.expect(std.fs.path.isAbsolute(h));
 }
 
-test "real env: xdgExecutableHome is absolute and ends with .local/bin" {
+test "env map: xdgExecutableHome is absolute and ends with .local/bin" {
     const allocator = std.testing.allocator;
-    const h = try bd.xdgExecutableHome(allocator, null);
+    var env = try makeTestEnv(allocator);
+    defer env.deinit();
+    const h = try bd.xdgExecutableHome(allocator, &env);
     defer allocator.free(h);
     try std.testing.expect(std.fs.path.isAbsolute(h));
     try std.testing.expect(
@@ -46,7 +56,7 @@ test "real env: xdgExecutableHome is absolute and ends with .local/bin" {
     );
 }
 
-test "real env: xdgRuntimeDir is null or absolute" {
+test "process env: xdgRuntimeDir is null or absolute" {
     const allocator = std.testing.allocator;
     const rt = try bd.xdgRuntimeDir(allocator);
     if (rt) |val| {
@@ -56,38 +66,46 @@ test "real env: xdgRuntimeDir is null or absolute" {
     // null is perfectly valid — no assertion needed
 }
 
-test "real env: xdgDataDirs first element equals xdgDataHome" {
+test "env map: xdgDataDirs first element equals xdgDataHome" {
     const allocator = std.testing.allocator;
-    const home = try bd.xdgDataHome(allocator, null);
+    var env = try makeTestEnv(allocator);
+    defer env.deinit();
+    const home = try bd.xdgDataHome(allocator, &env);
     defer allocator.free(home);
-    const dirs = try bd.xdgDataDirs(allocator, null);
+    const dirs = try bd.xdgDataDirs(allocator, &env);
     defer bd.freeDirs(allocator, dirs);
     try std.testing.expect(dirs.len >= 1);
     try std.testing.expectEqualStrings(home, dirs[0]);
 }
 
-test "real env: all xdgDataDirs entries are absolute" {
+test "env map: all xdgDataDirs entries are absolute" {
     const allocator = std.testing.allocator;
-    const dirs = try bd.xdgDataDirs(allocator, null);
+    var env = try makeTestEnv(allocator);
+    defer env.deinit();
+    const dirs = try bd.xdgDataDirs(allocator, &env);
     defer bd.freeDirs(allocator, dirs);
     for (dirs) |d| {
         try std.testing.expect(std.fs.path.isAbsolute(d));
     }
 }
 
-test "real env: xdgConfigDirs first element equals xdgConfigHome" {
+test "env map: xdgConfigDirs first element equals xdgConfigHome" {
     const allocator = std.testing.allocator;
-    const home = try bd.xdgConfigHome(allocator, null);
+    var env = try makeTestEnv(allocator);
+    defer env.deinit();
+    const home = try bd.xdgConfigHome(allocator, &env);
     defer allocator.free(home);
-    const dirs = try bd.xdgConfigDirs(allocator, null);
+    const dirs = try bd.xdgConfigDirs(allocator, &env);
     defer bd.freeDirs(allocator, dirs);
     try std.testing.expect(dirs.len >= 1);
     try std.testing.expectEqualStrings(home, dirs[0]);
 }
 
-test "real env: all xdgConfigDirs entries are absolute" {
+test "env map: all xdgConfigDirs entries are absolute" {
     const allocator = std.testing.allocator;
-    const dirs = try bd.xdgConfigDirs(allocator, null);
+    var env = try makeTestEnv(allocator);
+    defer env.deinit();
+    const dirs = try bd.xdgConfigDirs(allocator, &env);
     defer bd.freeDirs(allocator, dirs);
     for (dirs) |d| {
         try std.testing.expect(std.fs.path.isAbsolute(d));
