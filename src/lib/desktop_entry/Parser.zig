@@ -3,10 +3,12 @@
 //! https://specifications.freedesktop.org/desktop-entry/latest/
 
 const std = @import("std");
+const Io = std.Io;
+
+const DesktopComment = @import("DesktopComment.zig");
+const DesktopEntry = @import("DesktopEntry.zig");
 const DesktopFile = @import("DesktopFile.zig");
 const DesktopGroup = @import("DesktopGroup.zig");
-const DesktopEntry = @import("DesktopEntry.zig");
-const DesktopComment = @import("DesktopComment.zig");
 const errors = @import("errors.zig");
 
 const Parser = @This();
@@ -163,15 +165,13 @@ fn validateSemantics(file: *DesktopFile) !void {
     }
 }
 
-/// Parse a desktop entry file from a file path
-pub fn parseFile(self: *Parser, path: []const u8) !DesktopFile {
-    const file = try std.fs.cwd().openFile(path, .{});
-    defer file.close();
-
-    const content = try file.readToEndAlloc(self.allocator, 1024 * 1024); // 1MB max
+/// Parse a desktop entry file from a file path.
+pub fn parseFile(self: *Parser, io: Io, path: []const u8) !DesktopFile {
+    const content = try Io.Dir.cwd().readFileAlloc(io, path, self.allocator, .limited(1024 * 1024));
     defer self.allocator.free(content);
 
     // Validate UTF-8
+
     if (!std.unicode.utf8ValidateSlice(content)) {
         return errors.ParseError.InvalidUtf8;
     }

@@ -3,6 +3,7 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
+
 const xdg = @import("xdg");
 const bd = xdg.base_directory;
 
@@ -93,11 +94,11 @@ test "real env: all xdgConfigDirs entries are absolute" {
     }
 }
 
-// ── Synthetic-env override tests ──────────────────────────────────────────────
-// Use EnvMap to inject a controlled environment without touching real env vars.
+// Synthetic-env override tests
+// Use Environ.Map to inject a controlled environment without touching real env vars.
 
-fn makeTestEnv(allocator: std.mem.Allocator) !std.process.EnvMap {
-    var env = std.process.EnvMap.init(allocator);
+fn makeTestEnv(allocator: std.mem.Allocator) !std.process.Environ.Map {
+    var env = std.process.Environ.Map.init(allocator);
     try env.put("HOME", "/home/xdgtest");
     return env;
 }

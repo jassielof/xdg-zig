@@ -2,18 +2,18 @@
 //!
 //! Implements version 0.8 of the spec: https://specifications.freedesktop.org/basedir-spec/latest/
 //!
-//! Most public functions accept an optional `?*const std.process.EnvMap`. When non-null the map is used instead of the real process environment, which allows deterministic unit testing without mutating global state. `xdgRuntimeDir` uses the real environment via its public API.
+//! Most public functions accept an optional `?*const std.process.Environ.Map`. When non-null the map is used instead of the real process environment, which allows deterministic unit testing without mutating global state. `xdgRuntimeDir` uses the real environment via its public API.
 //!
 //! Functions returning a single path return a `[]u8` owned by the caller. Directory list functions return a `[][]u8`; use `freeDirs` to release them.
 //!
 //! Spec rule: paths in env vars MUST be absolute; relative paths are silently ignored when building directory lists.
 
 const std = @import("std");
-const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 const EnvironMap = std.process.Environ.Map;
 const fsp = std.fs.path;
 const Io = std.Io;
+const builtin = @import("builtin");
 
 /// Look up a key in an environment map (which must be provided by the caller).
 ///
@@ -61,7 +61,7 @@ fn getHomeDir(allocator: Allocator, env: ?*const EnvironMap) ![]u8 {
 
 /// Split a platform-path-separated list and append only absolute entries.
 ///
-/// Uses the unmanaged ArrayList API (Zig 0.15): pass allocator to `append`.
+/// Uses the unmanaged ArrayList API: pass allocator to `append`.
 fn collectAbsolutePaths(
     allocator: Allocator,
     list_str: []const u8,
@@ -198,12 +198,12 @@ pub fn xdgConfigDirs(allocator: Allocator, env: ?*const EnvironMap) ![][]u8 {
 /// Search data dirs for a relative `resource` path; return first existing match.
 ///
 /// Caller must free the returned path (when non-null).
-pub fn findDataFile(allocator: Allocator, env: ?*const EnvironMap, resource: []const u8) !?[]u8 {
+pub fn findDataFile(allocator: Allocator, io: Io, env: ?*const EnvironMap, resource: []const u8) !?[]u8 {
     const dirs = try xdgDataDirs(allocator, env);
     defer freeDirs(allocator, dirs);
     for (dirs) |dir| {
         const candidate = try std.mem.join(allocator, "/", &.{ dir, resource });
-        if (Io.Dir.accessAbsolute(defaultIo(), candidate, .{})) |_| {
+        if (Io.Dir.accessAbsolute(io, candidate, .{})) |_| {
             return candidate;
         } else |_| {
             allocator.free(candidate);
@@ -215,12 +215,12 @@ pub fn findDataFile(allocator: Allocator, env: ?*const EnvironMap, resource: []c
 /// Search config dirs for a relative `resource` path; return first existing match.
 ///
 /// Caller must free the returned path (when non-null).
-pub fn findConfigFile(allocator: Allocator, env: ?*const EnvironMap, resource: []const u8) !?[]u8 {
+pub fn findConfigFile(allocator: Allocator, io: Io, env: ?*const EnvironMap, resource: []const u8) !?[]u8 {
     const dirs = try xdgConfigDirs(allocator, env);
     defer freeDirs(allocator, dirs);
     for (dirs) |dir| {
         const candidate = try std.mem.join(allocator, "/", &.{ dir, resource });
-        if (Io.Dir.accessAbsolute(defaultIo(), candidate, .{})) |_| {
+        if (Io.Dir.accessAbsolute(io, candidate, .{})) |_| {
             return candidate;
         } else |_| {
             allocator.free(candidate);
@@ -243,10 +243,6 @@ fn makeEnv(allocator: Allocator) !EnvironMap {
 
 fn processEnviron() std.process.Environ {
     return .{ .block = if (builtin.os.tag == .windows) .global else .empty };
-}
-
-fn defaultIo() Io {
-    return Io.Threaded.global_single_threaded.io();
 }
 
 test "xdgDataHome: default from HOME" {

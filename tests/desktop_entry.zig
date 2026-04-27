@@ -2,16 +2,20 @@
 //! Exercises all fixture files under tests/fixtures/desktop-entry/.
 
 const std = @import("std");
+
 const xdg = @import("xdg");
 const de = xdg.desktop_entry;
 
-fn resolveFixturePath(allocator: std.mem.Allocator, rel_path: []const u8) ![]u8 {
-    var current_dir = try std.fs.cwd().realpathAlloc(allocator, ".");
+fn resolveFixturePath(allocator: std.mem.Allocator, io: std.Io, rel_path: []const u8) ![]u8 {
+    const cwd_realpath = try std.Io.Dir.cwd().realPathFileAlloc(io, ".", allocator);
+    defer allocator.free(cwd_realpath);
+
+    var current_dir = try allocator.dupe(u8, cwd_realpath);
     defer allocator.free(current_dir);
 
     while (true) {
         const candidate = try std.fs.path.join(allocator, &.{ current_dir, rel_path });
-        if (std.fs.cwd().access(candidate, .{})) {
+        if (std.Io.Dir.accessAbsolute(io, candidate, .{})) {
             return candidate;
         } else |err| switch (err) {
             error.FileNotFound => allocator.free(candidate),
@@ -34,9 +38,10 @@ fn resolveFixturePath(allocator: std.mem.Allocator, rel_path: []const u8) ![]u8 
 
 // Helper: parse a fixture file relative to project root, independent of cwd.
 fn parseFixture(allocator: std.mem.Allocator, rel_path: []const u8) !de.DesktopFile {
-    const path = try resolveFixturePath(allocator, rel_path);
+    const io = std.testing.io;
+    const path = try resolveFixturePath(allocator, io, rel_path);
     defer allocator.free(path);
-    return de.parseFile(allocator, path);
+    return de.parseFile(allocator, io, path);
 }
 
 // ── Valid fixtures ─────────────────────────────────────────────────────────────
